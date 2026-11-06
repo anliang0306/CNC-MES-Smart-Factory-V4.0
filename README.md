@@ -89,7 +89,13 @@ docker compose --profile edge up -d --build edge-gateway
 
 `planned_stop` 和 `maintenance` 从计划生产时间分母扣除。尚未结束的状态段最多延续到最后一条有效设备数据接收时间 + 90 秒，防止采集断线后无限累计运行时间。产量依据 `good_count_total`、`reject_count_total` 两个累计计数器在 OEE 时间窗内的增量计算。
 
-计数器清零、回绕、换班清零和补传数据需要结合机床实测策略处理。缺少状态历史、计数器或理想节拍时，接口会将 `data_complete` 标为 `false`。该字段仅代表采集要素齐备，当前尚未配置班次/休息日历（`shift_calendar_applied=false`），正式 OEE KPI 上线前必须先补班次日历和非生产时段规则；未校准前不得将模拟数据用于薪酬、产能承诺或正式 KPI。
+计数器清零、回绕、换班清零和补传数据需要结合机床实测策略处理。缺少状态历史、计数器或理想节拍时，接口会将 `data_complete` 标为 `false`。该字段仅代表采集要素齐备，默认口径尚未配置班次/休息日历（`shift_calendar_applied=false`），正式 OEE KPI 上线前必须先校准班次日历和非生产时段规则；未校准前不得将模拟数据用于薪酬、产能承诺或正式 KPI。
+
+**可选班次日历口径（V4.0 新增）：** `GET /api/v3/oee/machines/{id}` 支持查询参数 `shift_start`、`shift_end`、`break_start`、`break_end`（`HH:MM`）与 `workdays`（0=周一…6=周日，可多次传入）。四段班次时间必须成组提供，`shift_start < shift_end`、休息时段包含于班内、`workdays` 取值 0–6，任一参数缺失或非法返回 400。启用后计划生产时间 = 查询窗口 ∩ 工作日班次时段（扣除休息时间），按 `.env` 的 `PLANT_TIMEZONE` 解释本地时间；`shift_calendar_applied=true`，且班次口径下 `data_complete` 要求计划时间 > 0。示例：
+
+```
+GET /api/v3/oee/machines/1?shift_start=08:00&shift_end=17:00&break_start=12:00&break_end=13:00&workdays=0&workdays=1&workdays=2&workdays=3&workdays=4&workdays=5
+```
 
 ## 5. 主要 API
 
@@ -100,13 +106,13 @@ docker compose --profile edge up -d --build edge-gateway
 | 网关列表 | `GET /api/v3/edge/gateways` | 登录后，管理/维修/只读角色 |
 | 设备总览 | `GET /api/v3/monitor/overview` | 登录后 |
 | 点位历史 | `GET /api/v3/monitor/machines/{id}/readings` | 登录后 |
-| OEE | `GET /api/v3/oee/machines/{id}` | 登录后；默认最近 8 小时 |
+| OEE | `GET /api/v3/oee/machines/{id}` | 登录后；默认最近 8 小时；可选班次日历参数见第 4 节 |
 | 报警规则 | `GET/POST /api/v3/alarms/rules` | 查询/管理员或维修人员新增 |
 | 报警事件 | `GET /api/v3/alarms/events` | 登录后 |
 | 报警确认 | `POST /api/v3/alarms/events/{id}/acknowledge` | 管理/维修/操作员 |
 | 报警关闭 | `POST /api/v3/alarms/events/{id}/resolve` | 管理/维修 |
 
-旧版 `/api/v1`、`/api/v2` 接口保持兼容。V1 API 默认也要求 Bearer Token。
+旧版 `/api/v1`、`/api/v2` 接口保持兼容。V1 API 默认也要求 Bearer Token，且 `viewer`/`gateway` 角色对写操作（POST/PUT/DELETE/PATCH）返回 403。登录接口有内存限流：同一用户名连续失败 5 次后 15 分钟内返回 429，成功登录自动清除计数。
 
 ## 6. 数据库迁移
 
@@ -163,7 +169,14 @@ PYTHONPATH=. python tests/smoke_test_v4.py
 - V4 AI 生产分析与追溯事件新增、查询。
 - 示例 OEE 测试输入 10 分钟运行、10 合格、1 不合格、30 秒理想节拍，输出 A=100%、P=55%、Q=90.91%、OEE=50%。
 
-未在此环境完成：Docker 镜像构建/Compose 启动、PostgreSQL 实库并发与性能测试、Vue 生产构建、真实 OPC UA/MTConnect 设备联调、断网缓存与补传耐久性测试、现场 OEE 校准及 OT 安全验收。不要把这些事项理解为已通过。
+V4.0 本机已完成的运行验证（2026-11）：
+
+- Docker Compose 全栈构建并启动（PostgreSQL 16 + API + 前端生产构建 + 模拟边缘网关）；网关持续上报，`outbox_pending=0`。
+- 前端生产构建（`vite build` + `vite preview`）已装入镜像并对外提供 5173。
+- 实库 E2E：登录、演示数据初始化、监控总览、OEE（默认口径与班次口径）、APS 任务→生成草案→审批写入正式排程→重新生成不重复占用的完整链路。
+- 边缘 Outbox：API 可用时按序投递并确认删除；持久性 4xx 与超限重试转入死信（冒烟测试覆盖）。
+
+仍未在此环境完成：PostgreSQL 实库高并发与性能压测、真实 OPC UA/MTConnect 设备联调、断网长时缓存与补传耐久性测试、现场 OEE 校准及 OT 安全验收。不要把这些事项理解为已通过。
 
 ## 9. V4.0 新增模块
 
@@ -187,7 +200,8 @@ PYTHONPATH=. python tests/smoke_test_v4.py
 ### 预测性维护趋势基线
 
 - `GET/POST/PUT /api/v4/maintenance/thresholds`：配置设备/点位阈值。
-- `GET /api/v4/maintenance/predictions`：读取最近传感器样本，计算线性趋势并外推 24 小时。
+- `GET /api/v4/maintenance/predictions`：读取最近传感器样本，计算线性趋势并外推 24 小时（纯只读，不落库）。
+- `POST /api/v4/maintenance/purge`：仅管理员；按 `days`（默认 30）清理过期设备读数、边缘消息与已关闭状态段，返回各表清理数量与截止时间，用于定期数据生命周期管理。
 
 阈值须依据设备手册和健康基线配置。线性外推不是故障概率或经验证的故障预测模型。
 

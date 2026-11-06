@@ -5,6 +5,12 @@
 - 修复 APS 生成（`POST /api/v4/aps/generate`）在窗口内存在已审批排程时因调用未定义函数 `_utc_naive_to_plant` 抛出 500 的问题；已审批/执行中排程现按与 APS 一致的工厂本地墙钟直接参与占用窗口合并，并补充回归冒烟用例。
 - 并发写路径加行锁：V1 报工（工单/工序行）、刀具消耗（刀具行）、物料出库（物料行）、V2 排程审批与 V4 APS 审批（设备行，防止并发审批绕过冲突检查）、边缘数据接入（设备行，串行化状态段切换）。SQLite 下为无操作，PostgreSQL 下生效。
 - `GET /api/v4/maintenance/predictions` 改为纯只读：预测按需计算、不再每次请求向 `maintenance_predictions` 表插入快照，轮询页面不再导致表无限增长。
+- OEE 新增可选班次日历参数（`shift_start/shift_end/break_start/break_end/workdays`）：计划生产时间按查询窗口 ∩ 班次时段（扣除休息时间、仅工作日）计算，时区按 `PLANT_TIMEZONE` 解释；参数须成组提供，部分提供或取值非法返回 400；未提供时口径不变（`shift_calendar_applied=false`）。
+- 新增 `POST /api/v4/maintenance/purge`（仅管理员）：按天数清理过期 `device_readings`、`edge_messages` 与已关闭状态段，返回各表清理数量与截止时间，供运维定期调用。
+- 边缘 Outbox 新增死信机制：收到持久性错误（400/401/403/404/409/411/413/415/422）或重试达到 `max_attempts`（默认 20）的消息转入死信并记录原因，`pending()` 不再返回死信；`stats()` 上报 `dead` 数量与最老消息时间。
+- 登录接口新增内存限流：同一用户名连续失败 5 次后 15 分钟内返回 429；成功登录清除计数。
+- V1 遗留 API 统一要求 Bearer Token，且 `viewer`/`gateway` 角色对写操作（POST/PUT/DELETE/PATCH）返回 403。
+- 前端新增生产报工、工单/工序创建、APS 任务录入的真实表单（原仅 JSON 编辑器），工单工序选项按详情接口懒加载缓存。
 - 前端生产部署改为 `vite build` + `vite preview`（容器内 4173，Compose 对外仍映射 5173），不再以 dev server 跑生产。
 - `migrate.py` 改用 `python -m alembic` 调用，Windows 下 pip 安装目录不在 PATH 时也能正常迁移。
 - 新增工作日/班次/休息时间窗口、工单内工序顺序和最早完工启发式；正式审批前二次检查设备时间冲突。

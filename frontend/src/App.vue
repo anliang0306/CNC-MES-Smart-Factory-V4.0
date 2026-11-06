@@ -78,8 +78,18 @@ async function ensureRefs(){
     request('/api/v1/work-orders'),request('/api/v1/machines'),request('/api/v2/employees')
   ])
   refData.value={orders:orders as any[],machines:machines as any[],employees:employees as any[]}
+  woOps.value={}
 }
-function woOptions(woId:any){return refData.value.orders.find((o:any)=>Number(o.id)===Number(woId))?.operations||[]}
+const woOps = ref<Record<number, any[]>>({})
+async function loadOps(woId:any){
+  const id = Number(woId)
+  if (!id || woOps.value[id]) return
+  try {
+    const r:any = await request(`/api/v1/work-orders/${id}`)
+    woOps.value = {...woOps.value, [id]: Array.isArray(r.operations)?r.operations:[]}
+  } catch(e:any) { /* 工序加载失败时保持空选项 */ }
+}
+function woOptions(woId:any){return woOps.value[Number(woId)]||[]}
 async function submitReport(){
   try{
     const r=await request('/api/v1/production/reports',{method:'POST',body:JSON.stringify({
@@ -92,7 +102,12 @@ async function submitReport(){
   }catch(e:any){error.value=e.message}
 }
 async function submitWorkOrder(){
-  try{await request('/api/v1/work-orders',{method:'POST',body:JSON.stringify(woForm.value)});notice.value='工单已创建';await load();await ensureRefs()}
+  try{
+    await request('/api/v1/work-orders',{method:'POST',body:JSON.stringify(woForm.value)})
+    notice.value='工单已创建'
+    refData.value.orders=[]
+    await ensureRefs(); await load()
+  }
   catch(e:any){error.value=e.message}
 }
 async function submitOperation(){
@@ -102,7 +117,9 @@ async function submitOperation(){
       sequence:Number(opForm.value.sequence)||10,operation_code:opForm.value.operation_code,operation_name:opForm.value.operation_name,
       machine_id:opForm.value.machine_id?Number(opForm.value.machine_id):null,standard_minutes:Number(opForm.value.standard_minutes)||0
     })})
-    notice.value='工序已添加';await load();await ensureRefs()
+    notice.value='工序已添加'
+    delete woOps.value[Number(opForm.value.work_order_id)]
+    await load()
   }catch(e:any){error.value=e.message}
 }
 async function submitApsJob(){
@@ -224,7 +241,7 @@ onUnmounted(()=>{if(monitorTimer)window.clearInterval(monitorTimer)})
         <div v-if="!refData.orders.length" class="empty">暂无工单，请先在“生产工单”页创建工单与工序</div>
         <template v-else>
         <div class="form-grid">
-          <label>工单<select v-model="repForm.work_order_id"><option value="">选择工单</option><option v-for="w in refData.orders" :key="w.id" :value="w.id">{{w.order_no}} · {{w.product_name}}</option></select></label>
+          <label>工单<select v-model="repForm.work_order_id" @change="repForm.operation_id='';loadOps(repForm.work_order_id)"><option value="">选择工单</option><option v-for="w in refData.orders" :key="w.id" :value="w.id">{{w.order_no}} · {{w.product_name}}</option></select></label>
           <label>工序<select v-model="repForm.operation_id"><option value="">选择工序</option><option v-for="op in woOptions(repForm.work_order_id)" :key="op.id" :value="op.id">{{op.sequence}} {{op.operation_code}} {{op.operation_name}}</option></select></label>
           <label>设备<select v-model="repForm.machine_id"><option value="">未指定</option><option v-for="mc in refData.machines" :key="mc.id" :value="mc.id">{{mc.code}}（{{mc.name}}）</option></select></label>
           <label>报工人<select v-model="repForm.employee_code"><option value="">选择员工</option><option v-for="e in refData.employees" :key="e.employee_code" :value="e.employee_code">{{e.employee_code}} · {{e.full_name}}</option></select></label>
@@ -261,7 +278,7 @@ onUnmounted(()=>{if(monitorTimer)window.clearInterval(monitorTimer)})
         <template v-else>
         <div class="form-grid">
           <label>任务编号<input v-model="apsForm.job_no" placeholder="APS-JOB-002"/></label>
-          <label>工单<select v-model="apsForm.work_order_id"><option value="">选择工单</option><option v-for="w in refData.orders" :key="w.id" :value="w.id">{{w.order_no}} · {{w.product_name}}</option></select></label>
+          <label>工单<select v-model="apsForm.work_order_id" @change="apsForm.operation_id='';loadOps(apsForm.work_order_id)"><option value="">选择工单</option><option v-for="w in refData.orders" :key="w.id" :value="w.id">{{w.order_no}} · {{w.product_name}}</option></select></label>
           <label>工序<select v-model="apsForm.operation_id"><option value="">选择工序</option><option v-for="op in woOptions(apsForm.work_order_id)" :key="op.id" :value="op.id">{{op.operation_code}} {{op.operation_name}}</option></select></label>
           <label>优先级（1-10）<input type="number" min="1" max="10" v-model.number="apsForm.priority"/></label>
           <label>交期（可选）<input type="datetime-local" v-model="apsForm.due_at"/></label>
