@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    env_file: .env
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    ports: ["8000:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports: ["5173:4173"]
+    depends_on: [api]
+  edge-gateway:
+    build: ./edge_gateway
+    restart: unless-stopped
+    profiles: ["edge"]
+    env_file: .env
+    environment:
+      MES_API_BASE_URL: http://api:8000
+      EDGE_CONFIG: /app/config.yaml
+      EDGE_OUTBOX_DB: /data/edge-outbox.db
+    volumes:
+      - ./edge_gateway/config.yaml:/app/config.yaml:ro
+      - edgeoutbox:/data
+    depends_on: [api]
+volumes:
+  pgdata:
+  edgeoutbox:

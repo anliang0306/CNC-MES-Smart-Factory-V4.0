@@ -1,0 +1,31 @@
+gateway_id: cnc-edge-gateway-01
+poll_seconds: 5
+machines:
+  # Safe commissioning mode. Emits simulated states and counters; no machine connection.
+  - machine_code: CNC-01
+    adapter: mock
+
+  # Example OPC UA configuration. Replace endpoint and NodeIds after OT approval.
+  # - machine_code: CNC-02
+  #   adapter: opcua
+  #   endpoint: opc.tcp://10.10.10.21:4840
+  #   username_env: OPCUA_CNC02_USER
+  #   password_env: OPCUA_CNC02_PASSWORD
+  #   state_map: {"ACTIVE": "running", "READY": "idle", "STOPPED": "idle", "INTERRUPTED": "alarm"}
+  #   node_map:
+  #     machine_state: ns=2;s=Channel1.Device1.Status
+  #     spindle_load_pct: ns=2;s=Channel1.Device1.SpindleLoad
+  #     spindle_speed_rpm: ns=2;s=Channel1.Device1.SpindleSpeed
+  #     good_count_total: ns=2;s=Channel1.Device1.GoodParts
+  #     reject_count_total: ns=2;s=Channel1.Device1.RejectParts
+
+  # Example MTConnect configuration. Confirm agent path/dataItemIds with the machine vendor.
+  # - machine_code: CNC-03
+  #   adapter: mtconnect
+  #   endpoint: http://10.10.10.23:5000
+  #   state_data_item_id: execution
+  #   data_items:
+  #     S1: spindle_load_pct
+  #     S2: spindle_speed_rpm
+  #     P1: good_count_total
+  #     P2: reject_count_total
